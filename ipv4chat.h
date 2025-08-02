@@ -1,5 +1,5 @@
-#ifndef CHAT_H
-#define CHAT_H
+#ifndef IPV4CHAT_H
+#define IPV4CHAT_H
 
 #include <string>
 #include <mutex>
@@ -27,4 +27,4 @@ private:
     void sender_thread();
 };
 
-#endif // CHAT_H
+#endif // IPV4CHAT_H

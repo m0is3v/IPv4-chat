@@ -24,6 +24,11 @@ Config Chat::read_config(const std::string& filename) {
     return cfg;
 }
 
+void clear_input_line() {
+    std::cout << "\033[1A";
+    std::cout << "\033[K";
+}
+
 void Chat::setup_socket() {
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -63,8 +68,8 @@ void Chat::receiver_thread() {
                 std::string sender_nick = message.substr(0, nick_end);
                 std::string msg_content = message.substr(nick_end + 1);
                 std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "[" << inet_ntoa(sender_addr.sin_addr) << "] "
-                          << sender_nick << ": " << msg_content << std::endl;
+                std::cout << "[" << config.ip << "] " << sender_nick 
+                          << ": " << msg_content << std::endl;
             }
         }
     }
@@ -80,18 +85,21 @@ void Chat::sender_thread() {
     std::string message;
     while (true) {
         std::getline(std::cin, message);
+        clear_input_line();
+        
         if (message.empty()) continue;
         
         if (message.length() > MAX_MSG_SIZE - config.nickname.length() - 1) {
             message = message.substr(0, MAX_MSG_SIZE - config.nickname.length() - 2);
         }
-
         std::string full_msg = config.nickname + ":" + message;
         if (sendto(sock, full_msg.c_str(), full_msg.length(), 0,
                   (sockaddr*)&broadcast_addr, sizeof(broadcast_addr)) < 0) {
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cerr << "Failed to send message" << std::endl;
         }
+        
+        
     }
 }
 
