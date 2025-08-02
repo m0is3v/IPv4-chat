@@ -1,12 +1,13 @@
 CC = g++
-CFLAGS = -std=c++17 -pthread
-TARGET = chat
-#
+CXXFLAGS = -std=c++17 -pthread -Wall -Wextra
+TARGET = main
+SOURCES = main.cpp ipv4chat.cpp
+HEADERS = ipv4chat.h
+
 all: $(TARGET)
 
-$(TARGET): main.cpp
-	$(CC) $(CFLAGS) -o $(TARGET) main.cpp
-
+$(TARGET): $(SOURCES) $(HEADERS)
+	$(CC) $(CXXFLAGS) -o $(TARGET) $(SOURCES)
 clean:
 	rm -f $(TARGET)
 
