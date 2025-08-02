@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <cstring>
 #include <thread>
@@ -7,7 +8,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <getopt.h>
 
 std::mutex cout_mutex;
 const int MAX_MSG_SIZE = 1000;
@@ -18,34 +18,13 @@ struct Config {
     std::string nickname;
 };
 
-void print_usage(const char* prog_name) {
-    std::cerr << "Usage: " << prog_name << " -a <IP_ADDRESS> -p <PORT>\n";
-    std::cerr << "Example: " << prog_name << " -a 192.168.1.100 -p 12345\n";
-}
-
-Config parse_args(int argc, char* argv[]) {
+Config read_config(const std::string& filename) {
     Config config;
-    int opt;
-
-    while ((opt = getopt(argc, argv, "a:p:")) != -1) {
-        switch (opt) {
-            case 'a':
-                config.ip = optarg;
-                break;
-            case 'p':
-                config.port = std::stoi(optarg);
-                break;
-            default:
-                print_usage(argv[0]);
-                exit(EXIT_FAILURE);
-        }
+    std::ifstream file(filename);
+    if (!file) {
+        throw std::runtime_error("Cannot open config file");
     }
-
-    if (config.ip.empty() || config.port == 0) {
-        print_usage(argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
+    file >> config.ip >> config.port;
     return config;
 }
 
@@ -94,9 +73,9 @@ void sender_thread(int sock, const std::string& broadcast_ip, int port, const st
     }
 }
 
-int main(int argc, char* argv[]) {
+int main() {
     try {
-        Config config = parse_args(argc, argv);
+        Config config = read_config("chat.conf");
         
         std::cout << "Enter your nickname: ";
         std::getline(std::cin, config.nickname);
@@ -106,19 +85,17 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error("Cannot create socket");
         }
 
-        // Allow broadcast and port reuse
+        // Allow broadcast
         int broadcast_enable = 1;
         setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
-        
-        int reuse = 1;
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
         // Bind to local port
         sockaddr_in local_addr;
         memset(&local_addr, 0, sizeof(local_addr));
         local_addr.sin_family = AF_INET;
         local_addr.sin_port = htons(config.port);
-        local_addr.sin_addr.s_addr = inet_addr(config.ip.c_str());
+        //local_addr.sin_addr.s_addr = inet_addr(config.ip.c_str());
+	local_addr.sin_addr.s_addr = INADDR_ANY;	
 
         if (bind(sock, (sockaddr*)&local_addr, sizeof(local_addr))) {
             throw std::runtime_error("Cannot bind socket");
@@ -136,7 +113,7 @@ int main(int argc, char* argv[]) {
         close(sock);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
-        return EXIT_FAILURE;
+        return 1;
     }
-    return EXIT_SUCCESS;
+    return 0;
 }
