@@ -2,7 +2,6 @@
 #define CHAT_H
 
 #include <string>
-#include <cstring>
 #include <mutex>
 
 const int MAX_MSG_SIZE = 1000;
@@ -17,12 +16,11 @@ class Chat {
 public:
     Chat();
     void run();
-    
 private:
     std::mutex cout_mutex;
     Config config;
     int sock;
-    
+
     Config read_config(const std::string& filename);
     void setup_socket();
     void receiver_thread();

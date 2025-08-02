@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <thread>
+#include <cstring>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -29,6 +30,9 @@ void Chat::setup_socket() {
         throw std::runtime_error("Cannot create socket");
     }
 
+    int reuse = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    
     int broadcast_enable = 1;
     setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
 
@@ -36,9 +40,9 @@ void Chat::setup_socket() {
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
     local_addr.sin_port = htons(config.port);
-    local_addr.sin_addr.s_addr = inet_addr(config.ip.c_str());
+    local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if (bind(sock, (sockaddr*)&local_addr, sizeof(local_addr))) {
+    if (bind(sock, (sockaddr*)&local_addr, sizeof(local_addr)) < 0) {
         throw std::runtime_error("Cannot bind socket");
     }
 }
@@ -52,14 +56,12 @@ void Chat::receiver_thread() {
         memset(buffer, 0, MAX_MSG_SIZE);
         int bytes_received = recvfrom(sock, buffer, MAX_MSG_SIZE - 1, 0,
                                     (sockaddr*)&sender_addr, &addr_len);
-        
         if (bytes_received > 0) {
             std::string message(buffer);
             size_t nick_end = message.find(':');
             if (nick_end != std::string::npos) {
                 std::string sender_nick = message.substr(0, nick_end);
                 std::string msg_content = message.substr(nick_end + 1);
-                
                 std::lock_guard<std::mutex> lock(cout_mutex);
                 std::cout << "[" << inet_ntoa(sender_addr.sin_addr) << "] "
                           << sender_nick << ": " << msg_content << std::endl;
@@ -78,13 +80,18 @@ void Chat::sender_thread() {
     std::string message;
     while (true) {
         std::getline(std::cin, message);
+        if (message.empty()) continue;
+        
         if (message.length() > MAX_MSG_SIZE - config.nickname.length() - 1) {
             message = message.substr(0, MAX_MSG_SIZE - config.nickname.length() - 2);
         }
 
         std::string full_msg = config.nickname + ":" + message;
-        sendto(sock, full_msg.c_str(), full_msg.length(), 0,
-              (sockaddr*)&broadcast_addr, sizeof(broadcast_addr));
+        if (sendto(sock, full_msg.c_str(), full_msg.length(), 0,
+                  (sockaddr*)&broadcast_addr, sizeof(broadcast_addr)) < 0) {
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cerr << "Failed to send message" << std::endl;
+        }
     }
 }
 
