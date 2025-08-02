@@ -28,7 +28,16 @@ Config read_config(const std::string& filename) {
     return config;
 }
 
-void receiver_thread(int sock, const std::string& nickname) {
+void clear_input_line() {
+    std::cout << "\033[1A";  // Move cursor up one line
+    std::cout << "\033[K";   // Clear to end of line
+}
+
+void print_prompt(const std::string& nickname) {
+    std::cout << nickname << "> " << std::flush;
+}
+
+void receiver_thread(int sock, const std::string& my_ip, const std::string& nickname) {
     char buffer[MAX_MSG_SIZE];
     sockaddr_in sender_addr;
     socklen_t addr_len = sizeof(sender_addr);
@@ -39,21 +48,28 @@ void receiver_thread(int sock, const std::string& nickname) {
                                     (sockaddr*)&sender_addr, &addr_len);
         
         if (bytes_received > 0) {
-            std::string message(buffer);
-            size_t nick_end = message.find(':');
-            if (nick_end != std::string::npos) {
-                std::string sender_nick = message.substr(0, nick_end);
-                std::string msg_content = message.substr(nick_end + 1);
-                
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "[" << inet_ntoa(sender_addr.sin_addr) << "] "
-                          << sender_nick << ": " << msg_content << std::endl;
+            std::string sender_ip = inet_ntoa(sender_addr.sin_addr);
+            // Не показываем собственные сообщения (они уже отображены в строке ввода)
+            if (sender_ip != my_ip) {
+                std::string message(buffer);
+                size_t nick_end = message.find(':');
+                if (nick_end != std::string::npos) {
+                    std::string sender_nick = message.substr(0, nick_end);
+                    std::string msg_content = message.substr(nick_end + 1);
+                    
+                    std::lock_guard<std::mutex> lock(cout_mutex);
+                    clear_input_line();
+                    std::cout << "[" << sender_ip << "] "
+                              << sender_nick << ": " << msg_content << std::endl;
+                    print_prompt(nickname);
+                }
             }
         }
     }
 }
 
-void sender_thread(int sock, const std::string& broadcast_ip, int port, const std::string& nickname) {
+void sender_thread(int sock, const std::string& broadcast_ip, int port, 
+                 const std::string& nickname, const std::string& my_ip) {
     sockaddr_in broadcast_addr;
     memset(&broadcast_addr, 0, sizeof(broadcast_addr));
     broadcast_addr.sin_family = AF_INET;
@@ -62,7 +78,14 @@ void sender_thread(int sock, const std::string& broadcast_ip, int port, const st
 
     std::string message;
     while (true) {
+        print_prompt(nickname);
         std::getline(std::cin, message);
+        
+        // Пропускаем пустые сообщения
+        if (message.empty()) {
+            continue;
+        }
+
         if (message.length() > MAX_MSG_SIZE - nickname.length() - 1) {
             message = message.substr(0, MAX_MSG_SIZE - nickname.length() - 2);
         }
@@ -70,6 +93,10 @@ void sender_thread(int sock, const std::string& broadcast_ip, int port, const st
         std::string full_msg = nickname + ":" + message;
         sendto(sock, full_msg.c_str(), full_msg.length(), 0,
               (sockaddr*)&broadcast_addr, sizeof(broadcast_addr));
+        
+        // Очищаем строку ввода и выводим сообщение в правильном формате
+        clear_input_line();
+        std::cout << "[" << my_ip << "] " << nickname << ": " << message << std::endl;
     }
 }
 
@@ -94,8 +121,7 @@ int main() {
         memset(&local_addr, 0, sizeof(local_addr));
         local_addr.sin_family = AF_INET;
         local_addr.sin_port = htons(config.port);
-        //local_addr.sin_addr.s_addr = inet_addr(config.ip.c_str());
-	local_addr.sin_addr.s_addr = INADDR_ANY;	
+        local_addr.sin_addr.s_addr = inet_addr(config.ip.c_str());
 
         if (bind(sock, (sockaddr*)&local_addr, sizeof(local_addr))) {
             throw std::runtime_error("Cannot bind socket");
@@ -104,8 +130,9 @@ int main() {
         std::cout << "Chat started. Listening on " << config.ip << ":" << config.port 
                   << " as " << config.nickname << std::endl;
 
-        std::thread receiver(receiver_thread, sock, config.nickname);
-        std::thread sender(sender_thread, sock, "255.255.255.255", config.port, config.nickname);
+        std::thread receiver(receiver_thread, sock, config.ip, config.nickname);
+        std::thread sender(sender_thread, sock, "255.255.255.255", config.port, 
+                         config.nickname, config.ip);
 
         receiver.join();
         sender.join();
