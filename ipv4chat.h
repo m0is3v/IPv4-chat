@@ -27,4 +27,4 @@ private:
     void sender_thread();
 };
 
-#endif // IPV4CHAT_H
+#endif
